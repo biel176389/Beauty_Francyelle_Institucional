@@ -391,8 +391,8 @@ const SERVICOS = [
   { nome:"Brow Lamination comum", preco:70 },
   { nome:"Buço", preco:10 },
 ];
-const HORARIOS = ['09:00','10:00','14:00','16:00','17:00'];
-const DIAS_ATENDIMENTO = [2,3,4,5,6]; // terça a sábado
+const HORARIOS_PADRAO = ['09:00','10:00','14:00','16:00','17:00']; // usado só se o painel ainda não configurou
+const DIAS_PADRAO = [2,3,4,5,6]; // terça a sábado (reserva)
 
 function brl(v){ return (Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -493,9 +493,9 @@ function primeiroDiaDisponivel(){
   const minutosAgora = agora.getHours()*60+agora.getMinutes();
   for(let i=0;i<30;i++){
     const d = new Date(); d.setDate(d.getDate()+i);
-    if(!DIAS_ATENDIMENTO.includes(d.getDay())) continue;
+    if(!diaAtende(toISO(d))) continue;
     const iso = toISO(d);
-    const temSlot = iso!==todayISO() || HORARIOS.some(h=> minutosDe(h) > minutosAgora);
+    const temSlot = iso!==todayISO() || slotsDoDia(iso).some(h=> !horaBloqueada(iso,h) && minutosDe(h) > minutosAgora);
     if(temSlot) return iso;
   }
   return null;
@@ -510,7 +510,7 @@ function renderDayStrip(){
     const d = new Date(hoje);
     d.setDate(d.getDate()+i);
     const wd = d.getDay();
-    const atende = DIAS_ATENDIMENTO.includes(wd);
+    const atende = diaAtende(toISO(d));
     const iso = toISO(d);
     const ehHoje = iso===hojeISO;
     const selected = iso===dataSelecionada;
@@ -556,9 +556,11 @@ function renderSlots(iso, ocupados){
   const ehHoje = iso===todayISO();
   const minutosAgora = ehHoje ? (agora.getHours()*60+agora.getMinutes()) : -1;
 
-  grid.innerHTML = HORARIOS.map(h=>{
+  const lista = slotsDoDia(iso);
+  if(lista.length===0){ grid.innerHTML = '<span class="slot-empty">Sem horários disponíveis nesse dia.</span>'; return; }
+  grid.innerHTML = lista.map(h=>{
     const passou = ehHoje && minutosDe(h) <= minutosAgora;
-    const ocupado = ocupados.has(h) || passou;
+    const ocupado = ocupados.has(h) || passou || horaBloqueada(iso,h);
     const selecionado = h===horaSelecionada;
     const cls = ocupado ? 'ocupado' : (selecionado ? 'selected' : '');
     return `<div class="slot-btn ${cls}" ${ocupado?'':`onclick="selecionarHora('${h}')"`}>${h}</div>`;
@@ -572,8 +574,58 @@ function selecionarHora(h){
 }
 window.selecionarHora = selecionarHora;
 
-renderDayStrip();
-{ const inicial = primeiroDiaDisponivel(); if(inicial) selecionarData(inicial); }
+/* ---------- horários vindos do painel (config/horarios e config/bloqueios) ---------- */
+let CFG_HORARIOS = null;
+let CFG_BLOQUEIOS = {};
+function minDe(h){ const [a,b]=h.split(':').map(Number); return a*60+b; }
+function hDe(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+function slotsDoDia(iso){
+  const [y,m,d] = iso.split('-').map(Number);
+  const wd = new Date(y,m-1,d).getDay();
+  if((CFG_BLOQUEIOS[iso]||{}).diaTodo) return [];
+  if(!CFG_HORARIOS) return DIAS_PADRAO.includes(wd) ? HORARIOS_PADRAO.slice() : [];
+  const c = (CFG_HORARIOS.dias||{})[wd];
+  if(!c || !c.ativo || !c.ini || !c.fim) return [];
+  const dur = Number(CFG_HORARIOS.duracao)||60;
+  const out = [];
+  for(let t=minDe(c.ini); t+dur<=minDe(c.fim); t+=dur){
+    if(c.pi && c.pf && t < minDe(c.pf) && t+dur > minDe(c.pi)) continue;
+    out.push(hDe(t));
+  }
+  return out;
+}
+function horaBloqueada(iso,h){ return ((CFG_BLOQUEIOS[iso]||{}).horarios||[]).includes(h); }
+function diaAtende(iso){ return slotsDoDia(iso).some(h=>!horaBloqueada(iso,h)); }
+
+let cfgCarregada = {h:false,b:false}, siteIniciado = false;
+function aplicarConfig(){
+  if(!siteIniciado){
+    if(!(cfgCarregada.h && cfgCarregada.b)) return;
+    siteIniciado = true;
+    renderDayStrip();
+    const ini = primeiroDiaDisponivel();
+    if(ini) selecionarData(ini); else atualizarResumoBar();
+    return;
+  }
+  renderDayStrip();
+  if(!dataSelecionada) return;
+  if(!diaAtende(dataSelecionada)){
+    dataSelecionada = null; horaSelecionada = null;
+    const ini = primeiroDiaDisponivel();
+    if(ini) selecionarData(ini); else { document.getElementById('slot-grid').innerHTML='<span class="slot-empty">Sem horários disponíveis.</span>'; atualizarResumoBar(); }
+    return;
+  }
+  if(horaSelecionada && (!slotsDoDia(dataSelecionada).includes(horaSelecionada) || horaBloqueada(dataSelecionada,horaSelecionada))) horaSelecionada = null;
+  renderSlots(dataSelecionada, ultimoOcupados);
+  atualizarResumoBar();
+}
+db.collection('config').doc('horarios').onSnapshot(doc=>{
+  CFG_HORARIOS = doc.exists ? doc.data() : null; cfgCarregada.h = true; aplicarConfig();
+}, err=>{ console.error(err); cfgCarregada.h = true; aplicarConfig(); });
+db.collection('config').doc('bloqueios').onSnapshot(doc=>{
+  CFG_BLOQUEIOS = doc.exists ? (doc.data().dias||{}) : {}; cfgCarregada.b = true; aplicarConfig();
+}, err=>{ console.error(err); cfgCarregada.b = true; aplicarConfig(); });
+setTimeout(()=>{ if(!siteIniciado){ cfgCarregada.h = cfgCarregada.b = true; aplicarConfig(); } }, 3000);
 
 document.getElementById('novo-agendamento-btn').addEventListener('click', ()=>{
   document.getElementById('booking-form').reset();
