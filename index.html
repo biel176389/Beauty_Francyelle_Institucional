@@ -708,7 +708,7 @@ document.getElementById('booking-form').addEventListener('submit', async (e)=>{
 });
 
 function escaparTextoICS(valor){
-  return String(valor||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');
+  return String(valor||'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');
 }
 
 function baixarEventoApple(a){
@@ -717,9 +717,9 @@ function baixarEventoApple(a){
   const inicio=new Date(Number(ano),Number(mes)-1,Number(dia),Number(hora),Number(minuto));
   const fim=new Date(inicio.getTime()+60*60000);
   const fmtLocal=dt=>dt.getFullYear()+String(dt.getMonth()+1).padStart(2,'0')+String(dt.getDate()).padStart(2,'0')+'T'+String(dt.getHours()).padStart(2,'0')+String(dt.getMinutes()).padStart(2,'0')+'00';
-  const fmtUTC=dt=>dt.toISOString().replace(/[-:]/g,'').replace(/\\.\\d{3}/,'');
+  const fmtUTC=dt=>dt.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');
   const local=a.local==='domicilio'?'Atendimento a domicílio (endereço combinado por WhatsApp)':'Rua Tenente Leopoldina, 74, Miraí, MG';
-  const descricao='Agendamento na The Beauty Francyelle\\nCliente: '+a.cliente+'\\nServiço: '+a.servico+'\\nTelefone: '+a.telefoneCliente+'\\nTotal: '+brl(a.valorTotal);
+  const descricao='Agendamento na The Beauty Francyelle\nCliente: '+a.cliente+'\nServiço: '+a.servico+'\nTelefone: '+a.telefoneCliente+'\nTotal: '+brl(a.valorTotal);
   const uid='beauty-francyelle-'+a.data+'-'+a.hora.replace(':','')+'@thebeautyfrancyelle';
   const linhas=[
     'BEGIN:VCALENDAR',
@@ -738,7 +738,7 @@ function baixarEventoApple(a){
     'END:VEVENT',
     'END:VCALENDAR'
   ];
-  const arquivo=new Blob([linhas.join('\\r\\n')+'\\r\\n'],{type:'text/calendar;charset=utf-8'});
+  const arquivo=new Blob([linhas.join('\r\n')+'\r\n'],{type:'text/calendar;charset=utf-8'});
   const url=URL.createObjectURL(arquivo);
   const link=document.createElement('a');
   link.href=url;
