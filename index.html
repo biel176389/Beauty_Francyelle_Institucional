@@ -341,7 +341,10 @@
     <div id="booking-success">
       <h3>Pedido enviado!</h3>
       <p>Vamos confirmar seu horário pelo WhatsApp em breve.</p>
-      <a href="#" id="google-cal-link" class="btn" target="_blank" rel="noopener">+ Adicionar ao Google Agenda</a>
+      <div style="display:flex;flex-direction:column;gap:12px;max-width:360px;margin:0 auto;">
+        <a href="#" id="google-cal-link" class="btn" target="_blank" rel="noopener">+ Adicionar ao Google Agenda</a>
+        <button type="button" class="btn btn-outline" id="apple-cal-btn" style="margin-left:0;">+ Adicionar ao Calendário Apple</button>
+      </div>
       <div style="margin-top:14px;">
         <button type="button" class="btn btn-outline" id="novo-agendamento-btn">Fazer outro agendamento</button>
       </div>
@@ -674,6 +677,7 @@ document.getElementById('booking-form').addEventListener('submit', async (e)=>{
       transaction.set(agendamentoRef,dadosAgendamento);
     });
     document.getElementById('google-cal-link').href=montarLinkGoogleAgenda(dadosAgendamento);
+    document.getElementById('apple-cal-btn').onclick=()=>baixarEventoApple(dadosAgendamento);
     document.getElementById('booking-form').style.display='none';
     document.getElementById('booking-success').classList.add('show');
     const toast=document.getElementById('booking-toast');
@@ -702,6 +706,48 @@ document.getElementById('booking-form').addEventListener('submit', async (e)=>{
     btn.style.cursor=concluido?'default':'';
   }
 });
+
+function escaparTextoICS(valor){
+  return String(valor||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');
+}
+
+function baixarEventoApple(a){
+  const [ano,mes,dia]=a.data.split('-');
+  const [hora,minuto]=a.hora.split(':');
+  const inicio=new Date(Number(ano),Number(mes)-1,Number(dia),Number(hora),Number(minuto));
+  const fim=new Date(inicio.getTime()+60*60000);
+  const fmtLocal=dt=>dt.getFullYear()+String(dt.getMonth()+1).padStart(2,'0')+String(dt.getDate()).padStart(2,'0')+'T'+String(dt.getHours()).padStart(2,'0')+String(dt.getMinutes()).padStart(2,'0')+'00';
+  const fmtUTC=dt=>dt.toISOString().replace(/[-:]/g,'').replace(/\\.\\d{3}/,'');
+  const local=a.local==='domicilio'?'Atendimento a domicílio (endereço combinado por WhatsApp)':'Rua Tenente Leopoldina, 74, Miraí, MG';
+  const descricao='Agendamento na The Beauty Francyelle\\nCliente: '+a.cliente+'\\nServiço: '+a.servico+'\\nTelefone: '+a.telefoneCliente+'\\nTotal: '+brl(a.valorTotal);
+  const uid='beauty-francyelle-'+a.data+'-'+a.hora.replace(':','')+'@thebeautyfrancyelle';
+  const linhas=[
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//The Beauty Francyelle//Agendamentos//PT-BR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:'+uid,
+    'DTSTAMP:'+fmtUTC(new Date()),
+    'DTSTART:'+fmtLocal(inicio),
+    'DTEND:'+fmtLocal(fim),
+    'SUMMARY:'+escaparTextoICS('The Beauty Francyelle — '+a.servico),
+    'DESCRIPTION:'+escaparTextoICS(descricao),
+    'LOCATION:'+escaparTextoICS(local),
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ];
+  const arquivo=new Blob([linhas.join('\\r\\n')+'\\r\\n'],{type:'text/calendar;charset=utf-8'});
+  const url=URL.createObjectURL(arquivo);
+  const link=document.createElement('a');
+  link.href=url;
+  link.download='agendamento-beauty-francyelle-'+a.data+'.ics';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
 
 function montarLinkGoogleAgenda(a){
   const [y,m,d] = a.data.split('-').map(Number);
