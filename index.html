@@ -386,14 +386,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 const TAXA_DOMICILIO = 5;
-const SERVICOS = [
-  { nome:"Design com henna", preco:35 },
-  { nome:"Design comum", preco:25 },
-  { nome:"Brow Lamination com henna", preco:85 },
-  { nome:"Brow Lamination com tintura", preco:100 },
-  { nome:"Brow Lamination comum", preco:70 },
-  { nome:"Buço", preco:10 },
-];
+let SERVICOS = [];
 const HORARIOS_PADRAO = ['09:00','10:00','14:00','16:00','17:00']; // usado só se o painel ainda não configurou
 const DIAS_PADRAO = [2,3,4,5,6]; // terça a sábado (reserva)
 
@@ -416,11 +409,27 @@ document.querySelectorAll('[data-view]').forEach(el=>{
 });
 
 /* ---------- serviços (página de serviços, clicável) ---------- */
-document.getElementById('servico-list').innerHTML = SERVICOS.map(s=>`
-  <div class="servico-row" style="cursor:pointer" onclick="irAgendarComServico('${escapeHtml(s.nome)}')">
-    <span class="nome">${escapeHtml(s.nome)}</span><span class="preco">${brl(s.preco)}</span>
-  </div>
-`).join('');
+function renderListaServicos(){
+  const lista=document.getElementById('servico-list');
+  const ativos=SERVICOS.filter(s=>s.ativo!==false);
+  if(!ativos.length){lista.innerHTML='<p class="taxa-nota">Nenhum serviço disponível no momento. Entre em contato para mais informações.</p>';return;}
+  lista.innerHTML=ativos.map(s=>`
+    <div class="servico-row" style="cursor:pointer" onclick="irAgendarComServico('${escapeHtml(s.nome)}')">
+      <span class="nome">${escapeHtml(s.nome)}</span><span class="preco">${brl(s.preco)}</span>
+    </div>`).join('');
+}
+db.collection('servicos').orderBy('nome').onSnapshot(snap=>{
+  SERVICOS=snap.docs.map(d=>({id:d.id,...d.data()}));
+  renderListaServicos();
+  if(servicoSelecionado){
+    const atualizado=SERVICOS.find(s=>s.nome===servicoSelecionado.nome&&s.ativo!==false);
+    if(atualizado){servicoSelecionado=atualizado;renderServicoEscolhido();atualizarTotalPreview();}
+    else{servicoSelecionado=null;renderServicoEscolhido();atualizarTotalPreview();}
+  }
+},err=>{
+  console.error('servicos',err);
+  document.getElementById('servico-list').innerHTML='<p class="taxa-nota">Não foi possível carregar os serviços. Tente novamente em instantes.</p>';
+});
 
 function irAgendarComServico(nome){
   selecionarServico(nome);
